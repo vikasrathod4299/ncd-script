@@ -1,11 +1,11 @@
-const { commonFetch, dateFormater } = require("./util.js");
+const { dateFormater } = require("./util.js");
 
 
-const addPersonalDetails = async (data, body, type) => {
+const addPersonalDetails = async (apiClient, data, body, type) => {
   try {
     const id = data["Individual ID"];
 
-    const json = await commonFetch(
+    const json = await apiClient.commonFetch(
       `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
       "POST",
       body,
@@ -18,11 +18,11 @@ const addPersonalDetails = async (data, body, type) => {
   }
 };
 
-const addScreeningDetails = async (data, payload, type) => {
+const addScreeningDetails = async (apiClient, data, payload, type) => {
   try {
     const individualId = data["Individual ID"];
 
-    const res = await commonFetch(
+    const res = await apiClient.commonFetch(
       `https://ncd.mohfw.gov.in/portal/cphm/condition/${type}/individual/${individualId}/screening`,
       "POST",
       payload,
@@ -38,9 +38,9 @@ const addScreeningDetails = async (data, payload, type) => {
   }
 };
 
-const checkPersonalScreening = async (id, type) => {
+const checkPersonalScreening = async (apiClient, id, type) => {
   try {
-    const json = await commonFetch(
+    const json = await apiClient.commonFetch(
       `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
       "GET",
       null,
@@ -56,9 +56,9 @@ const checkPersonalScreening = async (id, type) => {
   }
 };
 
-const checkScreening = async (id, type) => {
+const checkScreening = async (apiClient, id, type) => {
   try {
-    const json = await commonFetch(
+    const json = await apiClient.commonFetch(
       `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}`,
       "GET",
       null,
@@ -75,11 +75,11 @@ const checkScreening = async (id, type) => {
   }
 };
 
-const createPayload = (data, type, screeningId = null) => {
+const createPayload = (data, type, userContext, screeningId = null) => {
   try {
-    const date = dateFormater(new Date());
-    const username = process.env.NCD_USER_NAME;
-    const name = process.env.NCD_NAME;
+    const date = data["Processing Date"] || dateFormater(new Date());
+    const username = userContext.userName;
+    const name = userContext.displayName;
     switch (type) {
       case "anmPersonalExam":
         return {

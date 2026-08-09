@@ -1,47 +1,47 @@
-// import necessary modules  with commonJS syntax
-
-const XLSX = require('xlsx');
-
-// Function to generate random integers in a given range
 function getRandomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  let num = Math.floor(Math.random() * (max - min + 1)) + min;
+  if (num % 2 !== 0) {
+    num += 1;
+    if (num > max) {
+      num -= 2;
+    }
+  }
+  return num;
 }
 
-// Load Excel file
-const filePath = './import/pgTest3.xlsx';
-const workbook = XLSX.readFile(filePath);
-const sheetName = workbook.SheetNames[0];
-const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+function enrichRowWithRandomData(row, options = {}) {
+  const overwriteExisting = options.overwriteExisting ?? true;
 
-// Add new random columns
-const updatedData = sheet.map(row => {
-  const height = getRandomInt(150, 200); // cm
-  const weight = getRandomInt(50, 120); // kg
+  const height = getRandomInt(150, 200);
+  const weight = getRandomInt(50, 120);
   const bmi = +(weight / ((height / 100) ** 2)).toFixed(2);
-  const systolic = getRandomInt(90, 140);
-  const diastolic = getRandomInt(60, 80);
-  const randomSugar = getRandomInt(70, 140);
+  const systolic = getRandomInt(100, 130);
+  const diastolic = getRandomInt(70, 90);
+  const randomSugar = getRandomInt(90, 120);
 
   return {
     ...row,
-    Height: height,
-    Weight: weight,
-    BMI: bmi,
-    'Systolic Blood Pressure': systolic,
-    'Diastolic Blood Pressure': diastolic,
-    'Random Blood Sugar': randomSugar
+    Height: overwriteExisting ? height : row.Height ?? height,
+    Weight: overwriteExisting ? weight : row.Weight ?? weight,
+    BMI: overwriteExisting ? bmi : row.BMI ?? bmi,
+    "Systolic Blood Pressure": overwriteExisting
+      ? systolic
+      : row["Systolic Blood Pressure"] ?? systolic,
+    "Diastolic Blood Pressure": overwriteExisting
+      ? diastolic
+      : row["Diastolic Blood Pressure"] ?? diastolic,
+    "Random Blood Sugar": overwriteExisting
+      ? randomSugar
+      : row["Random Blood Sugar"] ?? randomSugar,
   };
-});
+}
 
-// Create a new worksheet and workbook
-const newSheet = XLSX.utils.json_to_sheet(updatedData);
-const newWorkbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(newWorkbook, newSheet, 'UpdatedData');
+function enrichRowsWithRandomData(rows, options) {
+  return rows.map((row) => enrichRowWithRandomData(row, options));
+}
 
-// Save to a new Excel file
-const outputPath = './upload/Pgtest3.xlsx';
-XLSX.writeFile(newWorkbook, outputPath);
-
-console.log(`✅ Updated file saved to: ${outputPath}`);
-
-module.exports = getRandomInt;
+module.exports = {
+  getRandomInt,
+  enrichRowWithRandomData,
+  enrichRowsWithRandomData,
+};

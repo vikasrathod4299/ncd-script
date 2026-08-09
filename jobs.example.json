@@ -1,0 +1,26 @@
+[
+  {
+    "id": "customer-a",
+    "inputFilePath": "./import/customer-a.xlsx",
+    "credsFilePath": "./customer-secrets/customer-a-creds.json",
+    "userName": "124-example-user",
+    "displayName": "124-example-user (example name)",
+    "outputDir": "./upload/customer-a",
+    "concurrency": 3,
+    "entriesPerDate": 25,
+    "overwriteRandomData": true,
+    "writePreparedSheet": true
+  },
+  {
+    "id": "customer-b",
+    "inputFilePath": "./import/customer-b.xlsx",
+    "credsFilePath": "./customer-secrets/customer-b-creds.json",
+    "userName": "124-example-user-2",
+    "displayName": "124-example-user-2 (example name)",
+    "outputDir": "./upload/customer-b",
+    "concurrency": 2,
+    "entriesPerDate": 10,
+    "overwriteRandomData": true,
+    "writePreparedSheet": true
+  }
+]
