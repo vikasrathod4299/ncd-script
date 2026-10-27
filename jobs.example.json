@@ -8,6 +8,7 @@
     "outputDir": "./upload/customer-a",
     "concurrency": 3,
     "entriesPerDate": 25,
+    "successEntries": 0,
     "overwriteRandomData": true,
     "writePreparedSheet": true
   },
@@ -20,6 +21,7 @@
     "outputDir": "./upload/customer-b",
     "concurrency": 2,
     "entriesPerDate": 10,
+    "successEntries": 0,
     "overwriteRandomData": true,
     "writePreparedSheet": true
   }

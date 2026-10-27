@@ -62,14 +62,18 @@ const buildPreparedPath = (job, date) => {
   );
 };
 
-const mapWithConcurrency = async (items, worker, concurrency) => {
+const mapWithConcurrency = async (items, worker, concurrency, shouldStop) => {
   const results = new Array(items.length);
   let currentIndex = 0;
+  let stopped = false;
 
   const runWorker = async () => {
-    while (currentIndex < items.length) {
+    while (currentIndex < items.length && !stopped) {
       const itemIndex = currentIndex++;
       results[itemIndex] = await worker(items[itemIndex], itemIndex);
+      if (shouldStop?.(itemIndex, results[itemIndex])) {
+        stopped = true;
+      }
     }
   };
 
@@ -77,7 +81,7 @@ const mapWithConcurrency = async (items, worker, concurrency) => {
     Array.from({ length: Math.min(concurrency, items.length || 1) }, () => runWorker()),
   );
 
-  return results;
+  return results.filter((result) => result !== undefined);
 };
 
 const addDays = (date, dayCount) => {
@@ -170,6 +174,7 @@ const loadJobs = async () => {
       displayName: job.displayName,
       concurrency: Number.parseInt(`${job.concurrency || defaultConcurrency}`, 10),
       entriesPerDate: Number.parseInt(`${job.entriesPerDate || 0}`, 10),
+      successEntries: Number.parseInt(`${job.successEntries || 0}`, 10),
       overwriteRandomData: job.overwriteRandomData ?? true,
       writePreparedSheet: job.writePreparedSheet ?? true,
     }));
@@ -189,6 +194,10 @@ const validateJob = async (job) => {
 
   if (Number.isNaN(job.entriesPerDate) || job.entriesPerDate < 0) {
     throw new Error(`Invalid entriesPerDate for job ${job.id}`);
+  }
+
+  if (Number.isNaN(job.successEntries) || job.successEntries < 0) {
+    throw new Error(`Invalid successEntries for job ${job.id}`);
   }
 
   if (!(await pathExists(job.inputFilePath))) {
@@ -232,6 +241,19 @@ const processRow = async (row, rowIndex, apiClient, userContext) => {
     screeningResults.forEach((screeningResult) => {
       row[screeningResult.type] = screeningResult.status;
     });
+
+    const isSuccessEntry =
+      screeningResults.some(
+        (result) => result.type === "500" && result.status === "success",
+      ) &&
+      screeningResults.some(
+        (result) => result.type === "600" && result.status === "success",
+      );
+
+    if (isSuccessEntry && userContext.success) {
+      userContext.success.count += 1;
+    }
+
     console.log("done", row["Middle Name"]);
   } catch (error) {
     row["CBAC"] = "failed";
@@ -266,6 +288,12 @@ async function main() {
       `Processing ${preparedRows.length} rows for ${job.id} with concurrency ${job.concurrency}`,
     );
 
+    const success = {
+      count: 0,
+      maxEntries: job.successEntries || 0,
+      shouldStop: () => success.maxEntries > 0 && success.count >= success.maxEntries,
+    };
+
     const result = await mapWithConcurrency(
       preparedRows,
       (row, rowIndex) =>
@@ -273,9 +301,17 @@ async function main() {
           jobId: job.id,
           userName: job.userName,
           displayName: job.displayName,
+          success,
         }),
       Math.max(1, job.concurrency || defaultConcurrency),
+      () => success.shouldStop(),
     );
+
+    if (success.maxEntries > 0) {
+      console.log(
+        `Stopped ${job.id} after ${success.count} success entries (target ${success.maxEntries})`,
+      );
+    }
 
     writeExcelFile(result, buildReportPath(job, date));
   }
@@ -296,7 +332,7 @@ const screeingOprations = async (row, apiClient, userContext) => {
         continue;
       }
 
-      if(type === "anmMenstrualHistory" && row.Sex === "M"){
+      if (type === "anmMenstrualHistory" && row.Sex === "M") {
         continue;
       }
 
@@ -324,9 +360,9 @@ const screeingOprations = async (row, apiClient, userContext) => {
           }
         } else {
           if (type === "100" || type === "200") {
-            if(!status?.screeningId){
+            if (!status?.screeningId) {
               screeningId = status.screeningId;
-            }else{
+            } else {
               console.log(`${type} aleady exist...`);
               continue;
             }

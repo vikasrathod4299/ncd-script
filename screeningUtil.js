@@ -33,7 +33,7 @@ const addScreeningDetails = async (apiClient, data, payload, type) => {
     }
     throw new Error(`Screening ID not found -- ${type}`);
   } catch (e) {
-    console.log('============> here errror' , payload)
+    console.log('============> here errror', payload)
     throw e;
   }
 };
@@ -204,8 +204,17 @@ const createPayload = (data, type, userContext, screeningId = null) => {
             anyIssuesInBreast: false,
             date,
           },
-          examination: null,
-          referral: false,
+          examination: {
+            refusedScreening: false,
+            lumpPoints: [],
+            nippleRetractionPoints: [],
+            skinDimplingPoints: [],
+            ulcerPoints: [],
+            nippleDischargePoints: [],
+            armpitSwellingLeft: null,
+            armpitSwellingRight: null
+          },
+          referral: null,
           createdUser: username,
           screeningANM: {
             users: username,

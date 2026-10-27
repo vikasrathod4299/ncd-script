@@ -16,7 +16,7 @@ function enrichRowWithRandomData(row, options = {}) {
   const weight = getRandomInt(50, 120);
   const bmi = +(weight / ((height / 100) ** 2)).toFixed(2);
   const systolic = getRandomInt(100, 130);
-  const diastolic = getRandomInt(70, 90);
+  const diastolic = getRandomInt(70, 89);
   const randomSugar = getRandomInt(90, 120);
 
   return {
