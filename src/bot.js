@@ -989,7 +989,8 @@ const createBotApp = async () => {
         await createJobFromDocument(
           ctx,
           ctx.message.document,
-          wizardCaption(session),
+          null,
+          buildWizardJob(session),
         );
       } catch (error) {
         logger.error(error);
