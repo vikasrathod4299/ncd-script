@@ -2,77 +2,51 @@ const { dateFormater } = require("./util.js");
 
 
 const addPersonalDetails = async (apiClient, data, body, type) => {
-  try {
-    const id = data["Individual ID"];
+  const id = data["Individual ID"];
+  const json = await apiClient.commonFetch(
+    `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
+    "POST",
+    body,
+  );
 
-    const json = await apiClient.commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
-      "POST",
-      body,
-    );
-
-    const screeningId = json?.screeningId;
-    return screeningId;
-  } catch (e) {
-    throw e;
-  }
+  return json?.screeningId;
 };
 
 const addScreeningDetails = async (apiClient, data, payload, type) => {
-  try {
-    const individualId = data["Individual ID"];
-
-    const res = await apiClient.commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/condition/${type}/individual/${individualId}/screening`,
-      "POST",
-      payload,
-    );
-    const screeningId = res?.screeningId;
-    if (screeningId) {
-      return screeningId;
-    }
+  const individualId = data["Individual ID"];
+  const res = await apiClient.commonFetch(
+    `https://ncd.mohfw.gov.in/portal/cphm/condition/${type}/individual/${individualId}/screening`,
+    "POST",
+    payload,
+  );
+  const screeningId = res?.screeningId;
+  if (!screeningId) {
     throw new Error(`Screening ID not found -- ${type}`);
-  } catch (e) {
-    console.log('============> here errror', payload)
-    throw e;
   }
+  return screeningId;
 };
 
 const checkPersonalScreening = async (apiClient, id, type) => {
-  try {
-    const json = await apiClient.commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
-      "GET",
-      null,
-    );
+  const json = await apiClient.commonFetch(
+    `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}/${type}`,
+    "GET",
+    null,
+  );
 
-    if (json.createdUser) {
-      return true;
-    } else {
-      return false;
-    }
-  } catch (e) {
-    throw e;
-  }
+  return Boolean(json.createdUser);
 };
 
 const checkScreening = async (apiClient, id, type) => {
-  try {
-    const json = await apiClient.commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}`,
-      "GET",
-      null,
-    );
+  const json = await apiClient.commonFetch(
+    `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${id}`,
+    "GET",
+    null,
+  );
 
-    const screeningId = json[type]?.[0].screeningId;
-
-    const rescreening =
-      json[type]?.[0]?.rescreeningEligibility?.eligibleForRescreen;
-
-    return { rescreening, screeningId };
-  } catch (e) {
-    throw e;
-  }
+  return {
+    rescreening: json[type]?.[0]?.rescreeningEligibility?.eligibleForRescreen,
+    screeningId: json[type]?.[0]?.screeningId,
+  };
 };
 
 const createPayload = (data, type, userContext, screeningId = null) => {

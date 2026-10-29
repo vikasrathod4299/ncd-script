@@ -1,6 +1,4 @@
-creds.json
 .env
 node_modules
-jobs.json
-customer-secrets
-
+data/
+.ssh

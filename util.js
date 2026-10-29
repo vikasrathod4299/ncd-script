@@ -1,6 +1,5 @@
 const XLSX = require("xlsx");
 const fs = require("fs").promises;
-const path = require("path");
 const cbacBodyData = require("./cbacData.json");
 const sinorCitizenData = require("./senior-citizen-cbac.json");
 
@@ -40,90 +39,105 @@ const ensureDirectory = async (dirPath) => {
   await fs.mkdir(dirPath, { recursive: true });
 };
 
-const readJsonFile = async (filePath) => {
-  const content = await fs.readFile(filePath, "utf8");
-  return JSON.parse(content);
-};
+const DEFAULT_BASE_URL = "https://ncd.mohfw.gov.in";
+const DEFAULT_BASIC_AUTH = "TkNEQnJvd3NlcjpTZWN1cmVOQ0Q=";
 
-const pathExists = async (filePath) => {
+const decodeJwt = (token) => {
   try {
-    await fs.access(filePath);
-    return true;
+    const payload = token.split(".")[1];
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
-    return false;
+    return null;
   }
 };
 
-const listExcelFiles = async (dirPath) => {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && /\.xlsx$/i.test(entry.name))
-    .map((entry) => path.join(dirPath, entry.name))
-    .sort();
+const getTokenExpiry = (token) => {
+  const payload = decodeJwt(token);
+  return payload?.exp ? payload.exp * 1000 : null;
 };
 
-const createApiClient = async (credsFilePath) => {
-  const absoluteCredsPath = path.resolve(credsFilePath);
-  const creds = await readJsonFile(absoluteCredsPath);
+const refreshTokens = async ({
+  refreshToken,
+  baseUrl = DEFAULT_BASE_URL,
+  basicAuth = DEFAULT_BASIC_AUTH,
+}) => {
+  const formData = new URLSearchParams();
+  formData.append("grant_type", "refresh_token");
+  formData.append("refresh_token", refreshToken);
+
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/portal/cphm/oauth/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${basicAuth}`,
+      },
+      body: formData,
+    });
+  } catch (cause) {
+    const error = new Error(`Unable to refresh token: ${cause.message}`);
+    error.code = "TOKEN_REFRESH_TRANSIENT";
+    error.cause = cause;
+    throw error;
+  }
+
+  if (!response.ok) {
+    const errorDetails = await response.text();
+    const error = new Error(`Unable to refresh token: ${errorDetails}`);
+    error.status = response.status;
+    error.code = [400, 401, 403].includes(response.status)
+      ? "AUTH_REFRESH_FAILED"
+      : "TOKEN_REFRESH_TRANSIENT";
+    throw error;
+  }
+
+  return response.json();
+};
+
+const createApiClient = async ({
+  tokenStore,
+  baseUrl = DEFAULT_BASE_URL,
+  basicAuth = DEFAULT_BASIC_AUTH,
+} = {}) => {
+  if (!tokenStore) {
+    throw new Error("createApiClient requires a tokenStore");
+  }
+
+  let creds = await tokenStore.get();
   let refreshPromise = null;
-  let authRefreshError = null;
 
   const getNewToken = async () => {
-    if (authRefreshError) {
-      throw authRefreshError;
-    }
-
     if (refreshPromise) {
       return refreshPromise;
     }
 
     refreshPromise = (async () => {
-      console.log(`refreshing token from ${absoluteCredsPath}`);
-      const formData = new URLSearchParams();
-      formData.append("grant_type", "refresh_token");
-      formData.append("refresh_token", creds.refresh_token);
-
       try {
-        const response = await fetch(
-          "https://ncd.mohfw.gov.in/portal/cphm/oauth/token",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-              Authorization: "Basic TkNEQnJvd3NlcjpTZWN1cmVOQ0Q=",
-            },
-            body: formData,
-          },
-        );
-
-        if (!response.ok) {
-          console.log("Not able to refresh token");
-          const errorDetails = await response.text();
-          console.error("Error Response:", errorDetails);
-          const error = new Error("Unable to refresh token");
-          error.code = "AUTH_REFRESH_FAILED";
-          throw error;
+        const latest = await tokenStore.get();
+        if (latest?.access_token && latest.access_token !== creds.access_token) {
+          creds = { ...creds, ...latest };
+          return latest;
         }
 
-        const json = await response.json();
-        await fs.writeFile(
-          absoluteCredsPath,
-          JSON.stringify(
-            {
-              access_token: json.access_token,
-              refresh_token: json.refresh_token,
-            },
-            null,
-            2,
-          ),
-        );
-        creds.access_token = json.access_token;
-        creds.refresh_token = json.refresh_token;
-        authRefreshError = null;
+        if (typeof tokenStore.refresh === "function") {
+          const json = await tokenStore.refresh();
+          creds = { ...creds, ...json };
+          return json;
+        }
+
+        const json = await refreshTokens({
+          refreshToken: latest?.refresh_token || creds.refresh_token,
+          baseUrl,
+          basicAuth,
+        });
+        await tokenStore.set(json);
+        creds = { ...creds, ...json };
         return json;
       } catch (error) {
-        authRefreshError = error;
-        console.error("Internal Server Error:", error);
+        if (!error.code) {
+          error.code = "AUTH_REFRESH_FAILED";
+        }
         throw error;
       } finally {
         refreshPromise = null;
@@ -134,16 +148,13 @@ const createApiClient = async (credsFilePath) => {
   };
 
   const commonFetch = async (url, method, body, canRetry = true) => {
-    if (authRefreshError) {
-      throw authRefreshError;
-    }
-
+    const portalOrigin = new URL(baseUrl).origin;
     const headers = {
       Authorization: `Bearer ${creds.access_token}`,
       "User-Agent": "Mozilla/6.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      Referer: "https://ncd.mohfw.gov.in/portal/",
-      host: "ncd.mohfw.gov.in",
-      origin: "https://ncd.mohfw.gov.in",
+      Referer: `${baseUrl}/portal/`,
+      host: new URL(baseUrl).host,
+      origin: portalOrigin,
     };
     const options = { method, headers };
 
@@ -163,14 +174,12 @@ const createApiClient = async (credsFilePath) => {
     }
 
     const errorBody = await response.text();
-    console.log(url);
-    console.log(errorBody);
     throw new Error(`Error fetching data: ${errorBody}`);
   };
 
   const fetchCbac = async (userId) => {
     return commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/individual/${userId}/cbacDetails`,
+      `${baseUrl}/portal/cphm/php/individual/${userId}/cbacDetails`,
       "GET",
       null,
     );
@@ -178,10 +187,8 @@ const createApiClient = async (credsFilePath) => {
 
   const postCbac = async (row) => {
     const id = row["Individual ID"];
-    console.log(row["Sex"]);
     let body = { ...cbacBodyData[row["Sex"]] };
 
-    console.log("Cbac date >>>>>>>>", row["Processing Date"]);
     body.rskAssmntMdl = {
       ...body.rskAssmntMdl,
       cbacCurDate: row["Processing Date"] || dateFormater(new Date()),
@@ -195,7 +202,7 @@ const createApiClient = async (credsFilePath) => {
     }
 
     const res = await commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/individual/${id}/cbacDetails`,
+      `${baseUrl}/portal/cphm/php/individual/${id}/cbacDetails`,
       "POST",
       body,
     );
@@ -205,7 +212,7 @@ const createApiClient = async (credsFilePath) => {
 
   const getScreeningDetails = async (userId) => {
     return commonFetch(
-      `https://ncd.mohfw.gov.in/portal/cphm/php/screeningdetails/individual/${userId}`,
+      `${baseUrl}/portal/cphm/php/screeningdetails/individual/${userId}`,
       "GET",
       null,
     );
@@ -224,9 +231,11 @@ module.exports = {
   readExcelFile,
   writeExcelFile,
   createApiClient,
-  readJsonFile,
-  pathExists,
-  listExcelFiles,
+  refreshTokens,
+  decodeJwt,
+  getTokenExpiry,
   ensureDirectory,
   dateFormater,
+  DEFAULT_BASE_URL,
+  DEFAULT_BASIC_AUTH,
 };
